@@ -255,7 +255,7 @@ class MOAgent:
         cycles: Optional[int] = None,
         save: bool = True,
         output_format: Literal['string', 'json'] = 'string'
-    ) -> Generator[str | ResponseChunk, None, None]:
+    ) -> Generator[Union[str, ResponseChunk], None, None]:
         """
         Generate a response using the MOA architecture.
         

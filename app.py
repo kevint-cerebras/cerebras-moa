@@ -335,7 +335,7 @@ with st.status("Current MOA Configuration", expanded=True, state='complete') as 
     # Use absolute path for the SVG image
     svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "moa.svg")
     if os.path.exists(svg_path):
-        st.image(svg_path, caption="Mixture of Agents Workflow", use_column_width=True)
+        st.image(svg_path, caption="Mixture of Agents Workflow", use_container_width=True)
     else:
         st.error(f"SVG image not found at {svg_path}")
         st.markdown("### Mixture of Agents Workflow Diagram")
