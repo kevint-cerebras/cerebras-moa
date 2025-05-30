@@ -1,0 +1,33 @@
+{
+  "main_config": {
+    "main_model": "llama-3.3-70b",
+    "cycles": 2,
+    "temperature": 0.1,
+    "system_prompt": "You are a personal assistant that is helpful.\n\n{helper_response}",
+    "reference_system_prompt": "You have been provided with a set of responses from various open-source models to the latest user query. \nYour task is to synthesize these responses into a single, high-quality response. \nIt is crucial to critically evaluate the information provided in these responses, recognizing that some of it may be biased or incorrect. \nYour response should not simply replicate the given answers but should offer a refined, accurate, and comprehensive reply to the instruction. \nEnsure your response is well-structured, coherent, and adheres to the highest standards of accuracy and reliability.\nResponses from models:\n{responses}\n"
+  },
+  "layer_config": {
+    "layer_agent_1": {
+      "system_prompt": "Think through your response step by step. {helper_response}",
+      "model_name": "llama-4-scout-17b-16e-instruct",
+      "temperature": 0.1
+    },
+    "layer_agent_2": {
+      "system_prompt": "Respond with a thought and then your response to the question. {helper_response}",
+      "model_name": "llama3.1-8b",
+      "temperature": 0.2,
+      "max_tokens": 2048
+    },
+    "layer_agent_3": {
+      "system_prompt": "You are an expert at logic and reasoning. Always take a logical approach to the answer. {helper_response}",
+      "model_name": "qwen-3-32b",
+      "temperature": 0.4,
+      "max_tokens": 2048
+    },
+    "layer_agent_4": {
+      "system_prompt": "You are an expert planner agent. Create a plan for how to answer the human's query. {helper_response}",
+      "model_name": "llama-3.3-70b",
+      "temperature": 0.5
+    }
+  }
+}

@@ -108,6 +108,45 @@ def stream_response(messages: Iterable[ResponseChunk]):
             # Yield the main agent's output
             yield message['delta']
 
+def update_moa_config(update_main_only=False):
+    """Auto-save the current configuration to the MOA agent
+    
+    Args:
+        update_main_only: If True, only update the main agent config, not the layer agents
+    """
+    try:
+        # Update the main config with the current number of layers
+        new_main_config = copy.deepcopy(st.session_state.moa_main_agent_config)
+        new_main_config['cycles'] = st.session_state.num_layers
+        
+        if update_main_only:
+            # Only update the main agent config, not the layer agents
+            set_moa_agent(
+                moa_main_agent_config=new_main_config,
+                override=False  # Don't override existing layer config
+            )
+        else:
+            # Convert agent configs to layer agent config format
+            new_layer_agent_config = {}
+            for agent in st.session_state.agent_configs:
+                new_layer_agent_config[agent["name"]] = {
+                    "system_prompt": agent["system_prompt"],
+                    "model_name": agent["model_name"],
+                    "temperature": float(agent["temperature"]),  # Ensure proper type
+                    "max_tokens": int(agent["max_tokens"])      # Ensure proper type
+                }
+            
+            # Set the MOA agent with the new configuration
+            set_moa_agent(
+                moa_main_agent_config=new_main_config,
+                moa_layer_agent_config=new_layer_agent_config,
+                override=True
+            )
+        return True
+    except Exception as e:
+        st.error(f"Error saving configuration: {str(e)}")
+        return False
+
 def set_moa_agent(
     moa_main_agent_config = None,
     moa_layer_agent_config = None,
@@ -116,11 +155,28 @@ def set_moa_agent(
     moa_main_agent_config = copy.deepcopy(moa_main_agent_config or default_main_agent_config)
     moa_layer_agent_config = copy.deepcopy(moa_layer_agent_config or default_layer_agent_config)
 
-    if "moa_main_agent_config" not in st.session_state or override:
+    # Only update the main agent config if explicitly provided or not initialized
+    if moa_main_agent_config is not None and ("moa_main_agent_config" not in st.session_state or override):
         st.session_state.moa_main_agent_config = moa_main_agent_config
 
-    if "moa_layer_agent_config" not in st.session_state or override:
+    # Only update the layer agent config if explicitly provided or not initialized
+    if moa_layer_agent_config is not None and ("moa_layer_agent_config" not in st.session_state or override):
         st.session_state.moa_layer_agent_config = moa_layer_agent_config
+        
+        # When layer agent config is updated, also update the agent_configs list to stay in sync
+        if "agent_configs" in st.session_state:
+            # Only update agent_configs if we're explicitly overriding with a new layer config
+            if override:
+                # Create a new agent_configs list from the provided layer_agent_config
+                st.session_state.agent_configs = []
+                for agent_name, agent_config in moa_layer_agent_config.items():
+                    st.session_state.agent_configs.append({
+                        "name": agent_name,
+                        "system_prompt": agent_config.get("system_prompt", "Think through your response step by step. {helper_response}"),
+                        "model_name": agent_config.get("model_name", "llama3.1-8b"),
+                        "temperature": float(agent_config.get("temperature", 0.7)),
+                        "max_tokens": int(agent_config.get("max_tokens", 2048))
+                    })
 
     if override or ("moa_agent" not in st.session_state):
         st_main_copy = copy.deepcopy(st.session_state.moa_main_agent_config)
@@ -137,6 +193,11 @@ def set_moa_agent(
             layer_agent_config=st_layer_copy,
             **st_main_copy
         )
+        
+        # Print debug info
+        print("=== set_moa_agent called ===")
+        print(f"num_layers: {st.session_state.moa_main_agent_config.get('cycles')}")
+        print(f"Successfully created new MOAgent instance")
 
         del st_main_copy
         del st_layer_copy
@@ -203,73 +264,292 @@ with st.sidebar:
     #     except Exception as e:
     #         st.error(f"Error loading file: {str(e)}")
 
-    with st.form("Agent Configuration", border=False):
-        # Load and Save moa config file
-             
-        if st.form_submit_button("Use Recommended Config"):
-            try:
-                set_moa_agent(
-                    moa_main_agent_config=rec_main_agent_config,
-                    moa_layer_agent_config=rec_layer_agent_config,
-                    override=True
-                )
-                st.session_state.messages = []
-                st.success("Configuration updated successfully!")
-            except json.JSONDecodeError:
-                st.error("Invalid JSON in Layer Agent Configuration. Please check your input.")
-            except Exception as e:
-                st.error(f"Error updating configuration: {str(e)}")
-
-        # Main model selection
-        main_model = st.session_state.moa_main_agent_config['main_model']
-        # Ensure the model is in our valid_model_names list
-        if main_model not in valid_model_names:
-            # Default to first model if current one isn't in list
-            default_index = 0
-            st.warning(f"Model '{main_model}' not in valid models list. Defaulting to {valid_model_names[0]}")
-        else:
-            default_index = valid_model_names.index(main_model)
+    # Agent management section with improved UI
+    st.markdown("## Agent Management")
+    
+    # Initialize config in session state if not present
+    if "agent_configs" not in st.session_state:
+        # Convert the existing config to the new format
+        st.session_state.agent_configs = []
+        for agent_name, agent_config in st.session_state.moa_layer_agent_config.items():
+            st.session_state.agent_configs.append({
+                "name": agent_name,
+                "system_prompt": agent_config.get("system_prompt", "Think through your response step by step. {helper_response}"),
+                "model_name": agent_config.get("model_name", "llama3.1-8b"),
+                "temperature": agent_config.get("temperature", 0.7),
+                "max_tokens": agent_config.get("max_tokens", 2048)
+            })
+    
+    # Initialize tracking variables in session state
+    if "agent_to_remove" not in st.session_state:
+        st.session_state.agent_to_remove = None
+    
+    if "num_layers" not in st.session_state:
+        st.session_state.num_layers = st.session_state.moa_main_agent_config.get('cycles', 1)
+    
+    # Create a more intuitive layout with tabs for different sections
+    tab1, tab2 = st.tabs(["📊 Configuration", "🧠 Agents"])
+    
+    with tab1:
+        # Main configuration controls
+        st.markdown("### Main Configuration")
+        
+        # Create a clean layout with columns
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Number of layers input (separate from number of agents)
+            num_layers = st.number_input(
+                "Number of Layers",
+                min_value=1,
+                max_value=20,  # Increased max value
+                value=st.session_state.num_layers,
+                help="The number of processing layers in the MOA architecture. Can exceed the number of agents."
+            )
+            if num_layers != st.session_state.num_layers:
+                st.session_state.num_layers = num_layers
+                # Auto-save the configuration, but only update the main config
+                update_moa_config(update_main_only=True)
+        
+        with col2:
+            # Main model selection
+            main_model = st.session_state.moa_main_agent_config['main_model']
+            # Ensure the model is in our valid_model_names list
+            if main_model not in valid_model_names:
+                # Default to first model if current one isn't in list
+                default_index = 0
+                st.warning(f"Model '{main_model}' not in valid models list. Defaulting to {valid_model_names[0]}")
+            else:
+                default_index = valid_model_names.index(main_model)
+                
+            new_main_model = st.selectbox(
+                "Main Model",
+                options=valid_model_names,
+                index=default_index,
+                help="The model used for the final response generation"
+            )
             
-        new_main_model = st.selectbox(
-            "Select Main Model",
-            options=valid_model_names,
-            index=default_index
-        )
-
-
-
-        # Cycles input
-        new_cycles = st.number_input(
-            "Number of Layers",
-            min_value=1,
-            max_value=10,
-            value=st.session_state.moa_main_agent_config['cycles']
-        )
-
-        # Main Model Temperature
-        main_temperature = st.number_input(
+            # Auto-save if main model changes
+            if new_main_model != main_model:
+                new_main_config = copy.deepcopy(st.session_state.moa_main_agent_config)
+                new_main_config['main_model'] = new_main_model
+                # Only update the main config, not the layer agents
+                set_moa_agent(
+                    moa_main_agent_config=new_main_config,
+                    override=False  # Don't override existing layer config
+                )
+        
+        # Main Model Temperature with a more intuitive slider
+        main_temp = st.session_state.moa_main_agent_config.get('temperature', 0.1)
+        new_main_temp = st.slider(
             label="Main Model Temperature",
-            value=0.1,
             min_value=0.0,
             max_value=1.0,
-            step=0.1
+            value=main_temp,
+            step=0.1,
+            help="Controls randomness in the main model's output. Higher values make output more random."
         )
-
-        # Layer agent configuration
-        tooltip = "Agents in the layer agent configuration run in parallel _per cycle_. Each layer agent supports all initialization parameters of [Cerebras' Cloud SDK](https://cloud.cerebras.ai) class as valid dictionary fields."
-        st.markdown("Layer Agent Config", help=tooltip)
-        new_layer_agent_config = st_ace(
-            key="layer_agent_config",
-            value=json.dumps(st.session_state.moa_layer_agent_config, indent=2),
-            language='json',
-            placeholder="Layer Agent Configuration (JSON)",
-            show_gutter=False,
-            wrap=True,
-            auto_update=True
-        )
-
-        with st.expander("Optional Main Agent Params"):
-            tooltip_str = """\
+        
+        # Auto-save if temperature changes
+        if new_main_temp != main_temp:
+            new_main_config = copy.deepcopy(st.session_state.moa_main_agent_config)
+            new_main_config['temperature'] = float(new_main_temp)  # Ensure proper type
+            # Only update the main config, not the layer agents
+            set_moa_agent(
+                moa_main_agent_config=new_main_config,
+                override=False  # Don't override existing layer config
+            )
+        
+        # Quick configuration options
+        st.markdown("### Quick Configuration Options")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Use Recommended Config", use_container_width=True):
+                try:
+                    # Reset agent configs
+                    st.session_state.agent_configs = []
+                    for agent_name, agent_config in rec_layer_agent_config.items():
+                        st.session_state.agent_configs.append({
+                            "name": agent_name,
+                            "system_prompt": agent_config.get("system_prompt", "Think through your response step by step. {helper_response}"),
+                            "model_name": agent_config.get("model_name", "llama3.1-8b"),
+                            "temperature": agent_config.get("temperature", 0.7),
+                            "max_tokens": agent_config.get("max_tokens", 2048)
+                        })
+                    
+                    # Set number of layers
+                    st.session_state.num_layers = rec_main_agent_config.get('cycles', 2)
+                    
+                    # Update the configuration
+                    set_moa_agent(
+                        moa_main_agent_config=rec_main_agent_config,
+                        moa_layer_agent_config=rec_layer_agent_config,
+                        override=True
+                    )
+                    st.session_state.messages = []
+                    st.success("Configuration updated successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error updating configuration: {str(e)}")
+        
+        with col2:
+            if st.button("Reset to Default Config", use_container_width=True):
+                try:
+                    # Reset agent configs
+                    st.session_state.agent_configs = []
+                    for agent_name, agent_config in default_layer_agent_config.items():
+                        st.session_state.agent_configs.append({
+                            "name": agent_name,
+                            "system_prompt": agent_config.get("system_prompt", "Think through your response step by step. {helper_response}"),
+                            "model_name": agent_config.get("model_name", "llama3.1-8b"),
+                            "temperature": agent_config.get("temperature", 0.7),
+                            "max_tokens": agent_config.get("max_tokens", 2048)
+                        })
+                    
+                    # Set number of layers
+                    st.session_state.num_layers = default_main_agent_config.get('cycles', 3)
+                    
+                    # Update the configuration
+                    set_moa_agent(
+                        moa_main_agent_config=default_main_agent_config,
+                        moa_layer_agent_config=default_layer_agent_config,
+                        override=True
+                    )
+                    st.session_state.messages = []
+                    st.success("Reset to default configuration!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error resetting configuration: {str(e)}")
+    
+    with tab2:
+        # Agent management section
+        st.markdown("### Agent Management")
+        
+        # Display current agents count and add button
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"**Current Agents: {len(st.session_state.agent_configs)} | Active Layers: {st.session_state.num_layers}**")
+        with col2:
+            if st.button("+ Add Agent", key="add_agent_btn", use_container_width=True):
+                # Create a unique agent ID to avoid duplicates
+                agent_id = len(st.session_state.agent_configs) + 1
+                agent_name = f"agent_{agent_id}"
+                
+                # Check if an agent with this name already exists
+                existing_names = [agent["name"] for agent in st.session_state.agent_configs]
+                while agent_name in existing_names:
+                    agent_id += 1
+                    agent_name = f"agent_{agent_id}"
+                
+                # Add the new agent with a unique name
+                st.session_state.agent_configs.append({
+                    "name": agent_name,
+                    "system_prompt": "Think through your response step by step. {helper_response}",
+                    "model_name": "llama3.1-8b",
+                    "temperature": 0.7,
+                    "max_tokens": 2048
+                })
+                
+                # Auto-save the configuration
+                if update_moa_config():
+                    st.success(f"Added new agent: {agent_name}")
+                    st.rerun()
+        
+        # Process agent removal if needed
+        if st.session_state.agent_to_remove is not None:
+            if 0 <= st.session_state.agent_to_remove < len(st.session_state.agent_configs):
+                st.session_state.agent_configs.pop(st.session_state.agent_to_remove)
+                # Auto-save the configuration
+                update_moa_config()
+            st.session_state.agent_to_remove = None
+            st.rerun()
+        
+        # Display each agent with a card-like UI
+        for i, agent in enumerate(st.session_state.agent_configs):
+            with st.container():
+                # Create a card-like container for each agent
+                st.markdown(f"""<div style='padding: 10px; border-radius: 5px; background-color: #f0f2f6; margin-bottom: 10px;'>
+                <h4>Agent {i+1}: {agent['name']}</h4>
+                </div>""", unsafe_allow_html=True)
+                
+                with st.expander("Edit Agent", expanded=False):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        new_name = st.text_input("Agent Name", value=agent["name"], key=f"tab1_name_{i}")
+                        # Create a safer model selection that handles missing models
+                        try:
+                            model_index = valid_model_names.index(agent["model_name"]) if agent["model_name"] in valid_model_names else 0
+                        except (ValueError, IndexError):
+                            model_index = 0
+                            
+                        new_model = st.selectbox(
+                            "Model", 
+                            options=valid_model_names,
+                            index=model_index,
+                            key=f"tab1_model_{i}"
+                        )
+                        new_temp = st.slider(
+                            "Temperature", 
+                            min_value=0.0, 
+                            max_value=1.0, 
+                            value=agent["temperature"], 
+                            step=0.1,
+                            key=f"tab1_temp_{i}",
+                            help="Controls randomness in the agent's output"
+                        )
+                    
+                    with col2:
+                        new_prompt = st.text_area(
+                            "System Prompt", 
+                            value=agent["system_prompt"], 
+                            height=100,
+                            key=f"tab1_prompt_{i}",
+                            help="Instructions for this agent. Must include {helper_response} placeholder."
+                        )
+                        new_tokens = st.number_input(
+                            "Max Tokens", 
+                            min_value=1, 
+                            max_value=8192, 
+                            value=agent["max_tokens"],
+                            key=f"tab1_tokens_{i}",
+                            help="Maximum number of tokens in the agent's response"
+                        )
+                    
+                    # Store original values for comparison
+                    original_name = agent["name"]
+                    original_model = agent["model_name"]
+                    original_temp = agent["temperature"]
+                    original_prompt = agent["system_prompt"]
+                    original_tokens = agent["max_tokens"]
+                    
+                    # Check if any values have changed
+                    if (new_name != original_name or 
+                        new_model != original_model or 
+                        new_temp != original_temp or 
+                        new_prompt != original_prompt or 
+                        new_tokens != original_tokens):
+                        
+                        # Update the agent configuration
+                        agent["name"] = new_name
+                        agent["model_name"] = new_model
+                        agent["temperature"] = float(new_temp)  # Ensure temperature is a float
+                        agent["system_prompt"] = new_prompt
+                        agent["max_tokens"] = int(new_tokens)  # Ensure max_tokens is an integer
+                        
+                        # Auto-save the configuration
+                        update_moa_config()
+                    
+                    # Remove button at the bottom of the expander
+                    if st.button("Remove Agent", key=f"tab1_remove_{i}", use_container_width=True):
+                        st.session_state.agent_to_remove = i
+                        st.rerun()
+    
+    # Advanced configuration options
+    with st.expander("Advanced Configuration Options", expanded=False):
+        # Optional main agent parameters editor
+        tooltip_str = """\
 Main Agent configuration that will respond to the user based on the layer agent outputs.
 Valid fields:
 - ``system_prompt``: System prompt given to the main agent. \
@@ -279,58 +559,131 @@ This is passed into the `{helper_response}` variable in the system prompt. \
 **IMPORTANT**: it should always include a `{responses}` prompt variable. 
 - ``main_model``: Which Cerebras powered model to use. Will overwrite the model given in the dropdown.\
 """
-            tooltip = tooltip_str
-            st.markdown("Main Agent Config", help=tooltip)
-            new_main_agent_config = st_ace(
-                key="main_agent_params",
-                value=json.dumps(st.session_state.moa_main_agent_config, indent=2),
-                language='json',
-                placeholder="Main Agent Configuration (JSON)",
-                show_gutter=False,
-                wrap=True,
-                auto_update=True
-            )
-
-        if st.form_submit_button("Update Configuration"):
-            try:
-                new_layer_config = json.loads(new_layer_agent_config)
-                new_main_config = json.loads(new_main_agent_config)
-                # Configure conflicting params
-                # If param in optional dropdown == default param set, prefer using explicitly defined param
-                if new_main_config.get('main_model', default_main_agent_config['main_model']) == default_main_agent_config["main_model"]:
-                    new_main_config['main_model'] = new_main_model
-                
-                if new_main_config.get('cycles', default_main_agent_config['cycles']) == default_main_agent_config["cycles"]:
-                    new_main_config['cycles'] = new_cycles
-
-                if new_main_config.get('temperature', default_main_agent_config['temperature']) == default_main_agent_config['temperature']:
-                    new_main_config['temperature'] = main_temperature
-                
+        st.markdown("### Advanced Main Agent Config", help=tooltip_str)
+        new_main_agent_config = st_ace(
+            key="tab1_main_agent_params",
+            value=json.dumps(st.session_state.moa_main_agent_config, indent=2),
+            language='json',
+            placeholder="Main Agent Configuration (JSON)",
+            show_gutter=False,
+            wrap=True,
+            auto_update=True,
+            height=200
+        )
+        
+        # Auto-save if JSON is valid
+        try:
+            new_config = json.loads(new_main_agent_config)
+            if new_config != st.session_state.moa_main_agent_config:
+                # Preserve the number of layers
+                new_config['cycles'] = st.session_state.num_layers
                 set_moa_agent(
-                    moa_main_agent_config=new_main_config,
-                    moa_layer_agent_config=new_layer_config,
+                    moa_main_agent_config=new_config,
                     override=True
                 )
-                st.session_state.messages = []
+        except json.JSONDecodeError:
+            # Don't auto-save if JSON is invalid
+            pass
+        
+        # Apply JSON configuration button
+        if st.button("Apply JSON Configuration", key="tab1_apply_json", use_container_width=True):
+            try:
+                # Get the main agent config from the JSON editor
+                new_main_config = json.loads(new_main_agent_config)
+                
+                # Always preserve the number of layers
+                new_main_config['cycles'] = st.session_state.num_layers
+                
+                # Set the MOA agent with the new configuration
+                set_moa_agent(
+                    moa_main_agent_config=new_main_config,
+                    override=True
+                )
                 st.success("Configuration updated successfully!")
+                st.rerun()
             except json.JSONDecodeError:
-                st.error("Invalid JSON in Layer Agent Configuration. Please check your input.")
+                st.error("Invalid JSON in Main Agent Configuration. Please check your input.")
             except Exception as e:
                 st.error(f"Error updating configuration: {str(e)}")
 
-    st.markdown("---")
-    st.markdown("""
-    ### Credits
-    - MOA: [Together AI](https://www.together.ai/blog/together-moa)
-    - LLMs: [Cerebras](https://cerebras.ai/)
-    - Paper: [arXiv:2406.04692](https://arxiv.org/abs/2406.04692)
-    """)
+# Advanced configuration options
+with st.expander("Advanced Configuration Options", expanded=False):
+    # Optional main agent parameters editor
+    tooltip_str = """\
+Main Agent configuration that will respond to the user based on the layer agent outputs.
+Valid fields:
+- ``system_prompt``: System prompt given to the main agent. \
+**IMPORTANT**: it should always include a `{helper_response}` prompt variable.
+- ``reference_prompt``: This prompt is used to concatenate and format each layer agent's output into one string. \
+This is passed into the `{helper_response}` variable in the system prompt. \
+**IMPORTANT**: it should always include a `{responses}` prompt variable. 
+- ``main_model``: Which Cerebras powered model to use. Will overwrite the model given in the dropdown.\
+"""
+    st.markdown("### Advanced Main Agent Config", help=tooltip_str)
+    new_main_agent_config = st_ace(
+        key="tab2_main_agent_params",
+        value=json.dumps(st.session_state.moa_main_agent_config, indent=2),
+        language='json',
+        placeholder="Main Agent Configuration (JSON)",
+        show_gutter=False,
+        wrap=True,
+        auto_update=True,
+        height=200
+    )
+    
+    # Auto-save if JSON is valid
+    try:
+        new_config = json.loads(new_main_agent_config)
+        if new_config != st.session_state.moa_main_agent_config:
+            # Preserve the number of layers
+            new_config['cycles'] = st.session_state.num_layers
+            
+            # Update the main agent config
+            st.session_state.moa_main_agent_config = new_config
+            
+            # Set the MOA agent with the new configuration
+            set_moa_agent(
+                moa_main_agent_config=new_config,
+                override=True
+            )
+    except json.JSONDecodeError:
+        # Don't auto-save if JSON is invalid
+        pass
+    
+    # Apply JSON configuration button
+    if st.button("Apply JSON Configuration", key="tab2_apply_json", use_container_width=True):
+        try:
+            # Get the main agent config from the JSON editor
+            new_main_config = json.loads(new_main_agent_config)
+            
+            # Always preserve the number of layers
+            new_main_config['cycles'] = st.session_state.num_layers
+            
+            # Set the MOA agent with the new configuration
+            set_moa_agent(
+                moa_main_agent_config=new_main_config,
+                override=True
+            )
+            st.success("Configuration updated successfully!")
+            st.rerun()
+        except json.JSONDecodeError:
+            st.error("Invalid JSON in Main Agent Configuration. Please check your input.")
+        except Exception as e:
+            st.error(f"Error updating configuration: {str(e)}")
+
+st.markdown("---")
+st.markdown("""
+### Credits
+- MOA: [Together AI](https://www.together.ai/blog/together-moa)
+- LLMs: [Cerebras](https://cerebras.ai/)
+- Paper: [arXiv:2406.04692](https://arxiv.org/abs/2406.04692)
+""")
 
 # Main app layout
 st.header("Mixture of Agents", anchor=False)
 st.write("A demo of the Mixture of Agents architecture proposed by Together AI, Powered by Cerebras LLMs.")
 
-# Display current configuration
+# Display current configuration in a more user-friendly format
 with st.status("Current MOA Configuration", expanded=True, state='complete') as config_status:
     # Use absolute path for the SVG image
     svg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "moa.svg")
@@ -340,26 +693,67 @@ with st.status("Current MOA Configuration", expanded=True, state='complete') as 
         st.error(f"SVG image not found at {svg_path}")
         st.markdown("### Mixture of Agents Workflow Diagram")
         st.markdown("*Image not available*")
-    st.markdown(f"**Main Agent Config**:")
-    new_layer_agent_config = st_ace(
-        value=json.dumps(st.session_state.moa_main_agent_config, indent=2),
-        language='json',
-        placeholder="Layer Agent Configuration (JSON)",
-        show_gutter=False,
-        wrap=True,
-        readonly=True,
-        auto_update=True
-    )
-    st.markdown(f"**Layer Agents Config**:")
-    new_layer_agent_config = st_ace(
-        value=json.dumps(st.session_state.moa_layer_agent_config, indent=2),
-        language='json',
-        placeholder="Layer Agent Configuration (JSON)",
-        show_gutter=False,
-        wrap=True,
-        readonly=True,
-        auto_update=True
-    )
+    
+    # Display a visual summary of the current configuration
+    st.markdown("### Current Configuration Summary")
+    
+    # Main agent info in a card-like format
+    st.markdown(f"""<div style='padding: 10px; border-radius: 5px; background-color: #f0f2f6; margin-bottom: 10px;'>
+    <h4>Main Agent</h4>
+    <p><b>Model:</b> {st.session_state.moa_main_agent_config['main_model']}</p>
+    <p><b>Temperature:</b> {st.session_state.moa_main_agent_config.get('temperature', 0.1)}</p>
+    <p><b>Active Layers:</b> {st.session_state.moa_main_agent_config.get('cycles', 1)}</p>
+    </div>""", unsafe_allow_html=True)
+    
+    # Display agents in a visual grid
+    st.markdown("#### Active Agents")
+    
+    # Calculate how many columns we need (3 agents per row)
+    num_agents = len(st.session_state.moa_layer_agent_config)
+    
+    # Create a grid of agents (3 per row)
+    for i in range(0, num_agents, 3):
+        cols = st.columns(3)
+        for j in range(3):
+            if i+j < num_agents:
+                agent_name = list(st.session_state.moa_layer_agent_config.keys())[i+j]
+                agent_config = st.session_state.moa_layer_agent_config[agent_name]
+                with cols[j]:
+                    st.markdown(f"""<div style='padding: 10px; border-radius: 5px; background-color: #e6f3ff; margin-bottom: 10px;'>
+                    <h5>{agent_name}</h5>
+                    <p><b>Model:</b> {agent_config.get('model_name', 'Not specified')}</p>
+                    <p><b>Temperature:</b> {agent_config.get('temperature', 0.7)}</p>
+                    </div>""", unsafe_allow_html=True)
+    
+# End of status element
+
+# Expandable sections for detailed configuration
+with st.expander("Detailed Configuration"):
+    tab1, tab2 = st.tabs(["Main Agent Config", "Layer Agents Config"])
+    
+    with tab1:
+        st_ace(
+            value=json.dumps(st.session_state.moa_main_agent_config, indent=2),
+            language='json',
+            placeholder="Main Agent Configuration (JSON)",
+            show_gutter=False,
+            wrap=True,
+            readonly=True,
+            auto_update=True,
+            height=200
+        )
+        
+        with tab2:
+            st_ace(
+                value=json.dumps(st.session_state.moa_layer_agent_config, indent=2),
+                language='json',
+                placeholder="Layer Agent Configuration (JSON)",
+                show_gutter=False,
+                wrap=True,
+                readonly=True,
+                auto_update=True,
+                height=300
+            )
 
 if st.session_state.get("message", []) != []:
     st.session_state['expand_config'] = False

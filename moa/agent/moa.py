@@ -169,10 +169,11 @@ class MOAgent:
             all_kwargs.update(kwargs)
             
         # Add temperature and max_tokens if specified
+        # Ensure temperature is a float and max_tokens is an integer
         if temperature is not None:
-            all_kwargs['temperature'] = temperature
+            all_kwargs['temperature'] = float(temperature)
         if max_tokens is not None:
-            all_kwargs['max_tokens'] = max_tokens
+            all_kwargs['max_tokens'] = int(max_tokens)
             
         print(f"Additional kwargs: {all_kwargs}")
         
@@ -273,17 +274,28 @@ class MOAgent:
         history = messages or self.memory.get_messages()
         helper_response = ""
         
+        # Use the requested number of cycles (layers) regardless of how many agents are configured
+        num_layers = cycles or self.cycles
+        
         # Run through each cycle
-        for cyc in range(cycles):
+        for cyc in range(num_layers):
             layer_responses = {}
+            
+            # If we have more layers than agents, we'll reuse agents in a round-robin fashion
+            # Convert the layer_agent_config dictionary items to a list for indexing
+            layer_agents = list(self.layer_agent_config.items())
+            num_agents = len(layer_agents)
             
             # Run each layer agent in parallel (in a real production system, 
             # we'd use threading or asyncio here for true parallelism)
-            for layer_name, layer_config in self.layer_agent_config.items():
+            for i, (layer_name, layer_config) in enumerate(layer_agents):
+                # If we're in a layer beyond the number of agents, create a unique name for logging
+                if cyc >= num_agents:
+                    layer_name = f"{layer_name}_layer{cyc}"
                 system_prompt = layer_config.get('system_prompt', self.system_prompt)
-                model_name = layer_config.get('model_name', 'llama3.1-8b')
-                temperature = layer_config.get('temperature', 0.7)
-                max_tokens = layer_config.get('max_tokens', None)
+                model_name = layer_config.get('model_name', self.main_model)
+                temperature = layer_config.get('temperature', self.temperature)
+                max_tokens = layer_config.get('max_tokens', self.max_tokens)
                 
                 # Create messages for this layer
                 layer_messages = self._create_chat_messages(
