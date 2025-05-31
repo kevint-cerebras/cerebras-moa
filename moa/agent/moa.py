@@ -214,16 +214,17 @@ class MOAgent:
                 return response.choices[0].message.content
                 
         except Exception as e:
-            error_msg = f"Error calling Cerebras API: {e}"
+            error_str = str(e)
+            error_msg = f"Error calling Cerebras API: {error_str}"
             print(error_msg)
             import traceback
             print(traceback.format_exc())
             if stream:
                 def error_generator():
-                    yield f"[Error: {str(e)}]"
+                    yield f"[Error: {error_str}]"
                 return error_generator()
             else:
-                return f"[Error: {str(e)}]"
+                return f"[Error: {error_str}]"
 
     def _create_chat_messages(
         self,
