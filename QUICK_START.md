@@ -23,7 +23,7 @@ streamlit run app.py
 - **Security**: 25 points (input validation, sanitization, etc.)
 - **Speed Bonus**: Up to 20 points for first 3 submissions!
 
-**Maximum Score: 170 points** 🏆
+**Maximum Score: 135 points** 🏆
 
 ## For Instructors
 

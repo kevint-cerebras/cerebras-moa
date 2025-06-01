@@ -1,0 +1,39 @@
+{
+  "main_config": {
+    "main_model": "llama-3.3-70b",
+    "cycles": 1,
+    "temperature": 0.0,
+    "max_tokens": 2048,
+    "system_prompt": "You are a helpful assistant that provides consistent, deterministic responses. Be precise and specific in your answers.",
+    "reference_system_prompt": "Synthesize the responses in a consistent, deterministic manner. Maintain accuracy and avoid introducing variability."
+  },
+  "layer_config": {},
+  "deterministic_settings": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "top_k": -1,
+    "seed": 42,
+    "stream": false,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "n": 1
+  },
+  "validation_config": {
+    "consistency_check_runs": 3,
+    "minimum_consistency_rate": 0.95,
+    "enable_response_caching": true,
+    "log_all_parameters": true
+  },
+  "model_preferences": {
+    "prefer_dense_over_moe": true,
+    "avoid_beta_models": true,
+    "use_single_agent": true,
+    "disable_multi_layer_processing": true
+  },
+  "prompt_guidelines": {
+    "use_structured_outputs": true,
+    "avoid_creative_requests": true,
+    "include_consistency_instructions": true,
+    "specify_exact_format": true
+  }
+} 

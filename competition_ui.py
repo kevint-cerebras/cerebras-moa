@@ -3,7 +3,7 @@ import time
 import asyncio
 import threading
 from streamlit_ace import st_ace
-from competitive_programming import CompetitiveProgrammingSystem, ORIGINAL_FUNCTION, TEST_CASES, SCORING
+from competitive_programming import CompetitiveProgrammingSystem, ORIGINAL_FUNCTION, TEST_CASES, SCORING, validate_and_execute_code, SecureExecutionError
 import pandas as pd
 import sqlite3
 
@@ -62,7 +62,7 @@ def render_competition_page():
                 color: white; padding: 2rem; border-radius: 10px; margin-bottom: 2rem;'>
         <h1>🏆 Code Competition Arena</h1>
         <h3>Fix the Buggy Function Challenge</h3>
-        <p>Maximum Score: 170 points | First 3 places get speed bonuses! 🚀</p>
+        <p>Maximum Score: 135 points | AI-powered grading with comprehensive analysis! 🚀</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -89,6 +89,8 @@ def render_challenge_tab():
     st.markdown("""
     **Challenge:** The function below has multiple bugs, edge cases, performance issues, and security vulnerabilities. 
     Your goal is to fix them all and submit your solution for AI-powered grading.
+    
+    **Focus on:** Code functionality, bug fixes, and performance - comments and documentation are optional!
     """)
     
     # Show the buggy function prominently
@@ -123,7 +125,7 @@ def render_challenge_tab():
     with col2:
         st.markdown("### 🏅 Scoring Breakdown")
         st.markdown("""
-        **Maximum: 170 points**
+        **Maximum: 135 points**
         
         📊 **Category Scores:**
         - 🐛 Bug Detection: **50 pts**
@@ -131,10 +133,7 @@ def render_challenge_tab():
         - ⚡ Performance: **25 pts**
         - 🔒 Security: **25 pts**
         
-        🚀 **Speed Bonuses:**
-        - 🥇 1st Place: **+20 pts**
-        - 🥈 2nd Place: **+10 pts**
-        - 🥉 3rd Place: **+5 pts**
+        **Note:** Comments and documentation are automatically removed and don't affect scoring!
         """)
         
         st.markdown("### 📋 Test Cases")
@@ -148,6 +147,25 @@ def render_submission_tab():
     """Render the code submission interface"""
     st.markdown("### 📝 Edit and Submit Your Solution")
     st.markdown("Fix the bugs in the function below and submit for AI-powered grading!")
+    
+    # Add info about fair grading (without mentioning injection)
+    st.info("""
+    🤖 **AI-Powered Fair Grading**: 
+    - Comments are automatically removed from your code before analysis
+    - Focus on functionality, not documentation - comments won't affect your score
+    - Your code logic is preserved while ensuring fair and secure grading
+    """)
+    
+    # Add info about allowed imports
+    st.success("""
+    📦 **Expanded Import Support**: You can now use these modules in your solutions:
+    - `typing` (List, Dict, Optional, etc.) for type hints
+    - `logging` for debugging and monitoring  
+    - `sys` (safe attributes only) for system info
+    - `dateutil` for robust date parsing
+    - `math` (expanded functions) for calculations
+    - `heapq`, `datetime`, `json` (as before)
+    """)
     
     # Student name input - more prominent
     student_name = st.text_input(
@@ -166,7 +184,7 @@ def render_submission_tab():
         theme='monokai',
         key="code_editor",
         height=500,  # Increased height
-        auto_update=False,
+        auto_update=True,  # Changed to True for automatic updates
         font_size=16,  # Larger font
         tab_size=4,
         show_gutter=True,
@@ -212,11 +230,12 @@ def render_submission_tab():
         
         with col2:
             st.markdown("""
-            **⚡ Performance Tips:**
-            - Avoid unnecessary sorting operations
-            - Use single loop when possible
-            - Consider early returns for edge cases
+            **⚡ Performance & Tools:**
+            - Use `from typing import List, Dict` for type hints
+            - Use `dateutil.parser.parse()` for flexible date parsing
+            - Use `logging` for debugging (won't affect scoring)
             - Choose efficient data structures
+            - Focus on code logic, not comments
             """)
     
     # Quick actions
@@ -297,6 +316,67 @@ def display_analysis_results(analysis_result):
     st.markdown("---")
     st.markdown("### 📊 Analysis Results")
     
+    # Check if validation failed
+    if analysis_result.get('validation_failed', False):
+        st.error("❌ Code Validation Failed - AI Analysis Skipped")
+        
+        # Display validation details
+        validation_results = analysis_result.get('validation_results', {})
+        
+        with st.expander("🧪 Validation Details", expanded=True):
+            st.markdown("#### 📝 Code Validation Results")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                syntax_status = "✅ Pass" if validation_results.get('syntax_valid', False) else "❌ Fail"
+                st.metric("Syntax Check", syntax_status)
+                
+                tests_passed = validation_results.get('passed_tests', 0)
+                total_tests = validation_results.get('total_tests', 0)
+                st.metric("Unit Tests", f"{tests_passed}/{total_tests}")
+            
+            with col2:
+                overall_status = "✅ Pass" if validation_results.get('passes_tests', False) else "❌ Fail"
+                st.metric("Overall Status", overall_status)
+            
+            # Show specific test results
+            if validation_results.get('test_results'):
+                st.markdown("#### 🔍 Test Case Results")
+                for test in validation_results['test_results']:
+                    status_icon = "✅" if test['passed'] else "❌"
+                    st.write(f"{status_icon} **{test['test_name']}**")
+                    if test['error']:
+                        st.error(f"Error: {test['error']}")
+                    elif test['output']:
+                        with st.expander(f"Output for {test['test_name']}", expanded=False):
+                            st.json(test['output'])
+            
+            # Show runtime errors if any
+            if validation_results.get('runtime_errors'):
+                st.markdown("#### ❌ Runtime Errors")
+                for error in validation_results['runtime_errors']:
+                    st.error(error)
+        
+        st.info("💡 **Fix the validation errors above and resubmit to get AI analysis and scoring!**")
+        return
+    
+    # Display validation results if analysis succeeded
+    validation_results = analysis_result.get('validation_results', {})
+    if validation_results:
+        with st.expander("🧪 Code Validation Results", expanded=False):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("✅ Syntax Check", "Pass")
+            with col2:
+                tests_passed = validation_results.get('passed_tests', 0)
+                total_tests = validation_results.get('total_tests', 0)
+                st.metric("🧪 Unit Tests", f"{tests_passed}/{total_tests}")
+            with col3:
+                st.metric("🎯 Validation", "✅ Pass")
+            
+            # Show AI processing info
+            st.success("🤖 **AI Processing**: Comments automatically removed, code analyzed by specialized AI agents")
+    
     # Score summary - make it full width with larger metrics
     st.markdown("#### 🎯 Score Breakdown")
     
@@ -309,9 +389,6 @@ def display_analysis_results(analysis_result):
         
         perf_score = analysis_result['analysis_results'].get('performance_agent', {}).get('score', 0)
         st.metric("⚡ Performance", f"{perf_score}/25", help="Code optimization and efficiency")
-        
-        speed_bonus = analysis_result.get('speed_bonus', 0)
-        st.metric("🚀 Speed Bonus", f"+{speed_bonus}", help="Early submission bonus")
     
     with col2:
         edge_score = analysis_result['analysis_results'].get('edge_case_checker', {}).get('score', 0)
@@ -322,12 +399,12 @@ def display_analysis_results(analysis_result):
     
     # Total score - full width and prominent
     total_score = analysis_result['total_score']
-    percentage = round((total_score / 170) * 100, 1)
+    percentage = round((total_score / 135) * 100, 1)  # Updated to 135 max score
     
     st.markdown(f"""
     <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                 color: white; padding: 2rem; border-radius: 15px; text-align: center; margin: 1rem 0;'>
-        <h1>🏆 Total Score: {total_score}/170 ({percentage}%)</h1>
+        <h1>🏆 Total Score: {total_score}/135 ({percentage}%)</h1>
         <p style='font-size: 1.2rem; margin: 0;'>Student: {analysis_result.get('student_name', 'Unknown')}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -353,21 +430,23 @@ def display_analysis_results(analysis_result):
             st.error(f"❌ {agent_display_name}: {analysis['error']}")
 
 def test_code_locally(code: str):
-    """Test the code with predefined test cases"""
+    """Test the code with predefined test cases using secure execution"""
     st.markdown("### 🧪 Local Test Results")
     
     try:
-        # Create a local namespace to execute the code
-        local_namespace = {}
-        exec(code, local_namespace)
+        # Import the secure execution function
+        from competitive_programming import validate_and_execute_code, SecureExecutionError
         
-        if 'calculate_user_metrics' not in local_namespace:
-            st.error("Function 'calculate_user_metrics' not found in your code!")
+        # Validate and extract function securely
+        try:
+            func, _ = validate_and_execute_code(code)
+            st.success("✅ Security validation passed!")
+        except SecureExecutionError as e:
+            st.error(f"❌ Security Error: {str(e)}")
+            st.warning("🚨 **Your code contains dangerous operations!** Please remove them and try again.")
             return
         
-        func = local_namespace['calculate_user_metrics']
-        
-        # Test each case
+        # Test each case with secure execution
         for i, test_case in enumerate(TEST_CASES):
             st.markdown(f"**Test Case {i+1}: {test_case['name']}**")
             
@@ -385,7 +464,7 @@ def test_code_locally(code: str):
             st.markdown("---")
                 
     except Exception as e:
-        st.error(f"❌ Code execution failed: {str(e)}")
+        st.error(f"❌ Code validation failed: {str(e)}")
 
 def render_leaderboard_tab():
     """Render live leaderboard with auto-refresh"""
@@ -467,7 +546,7 @@ def render_leaderboard_tab():
         position = entry['position']
         name = entry['student_name']
         score = entry['best_score']
-        percentage = round((score / 170) * 100, 1)
+        percentage = round((score / 135) * 100, 1)
         
         # Medal icons for top 3
         if position == 1:
@@ -485,7 +564,7 @@ def render_leaderboard_tab():
                     color: white; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;'>
             <div>
                 <h3>{medal} {name}</h3>
-                <p>{percentage}% • {score}/170 points</p>
+                <p>{percentage}% • {score}/135 points</p>
             </div>
             <div style='text-align: right; font-size: 2rem; font-weight: bold;'>
                 {score}
@@ -540,13 +619,4 @@ def render_scoring_guide():
     ])
     st.dataframe(sec_df, use_container_width=True)
     
-    # Speed Bonus
-    st.markdown("#### 🚀 Speed Bonus (20 points)")
-    speed_df = pd.DataFrame([
-        {"Position": "1st Place", "Bonus": 20, "Description": "First correct submission"},
-        {"Position": "2nd Place", "Bonus": 10, "Description": "Second correct submission"},
-        {"Position": "3rd Place", "Bonus": 5, "Description": "Third correct submission"}
-    ])
-    st.dataframe(speed_df, use_container_width=True)
-    
-    st.markdown("**Maximum Possible Score: 170 points**") 
+    st.markdown("**Maximum Possible Score: 135 points**") 

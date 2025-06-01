@@ -1,0 +1,175 @@
+{
+  "competition_config": {
+    "name": "Python Code Debugging Competition",
+    "description": "AI-powered competitive programming system where students fix deliberately buggy Python functions",
+    "total_max_score": 135,
+    "version": "2.0"
+  },
+  
+  "scoring_categories": {
+    "bug_detection": {
+      "max_score": 50,
+      "description": "Identifies and fixes critical bugs in the code"
+    },
+    "edge_cases": {
+      "max_score": 35,
+      "description": "Handles edge cases and unexpected input scenarios"
+    },
+    "performance": {
+      "max_score": 25,
+      "description": "Optimizes code for efficiency and performance"
+    },
+    "security": {
+      "max_score": 25,
+      "description": "Implements secure coding practices and input validation"
+    }
+  },
+
+  "moa_agents": {
+    "bug_hunter": {
+      "model": "llama-3.3-70b",
+      "layer_model": "llama-4-scout-17b-16e-instruct",
+      "max_score": 50,
+      "prompt": "Analyze the provided Python code for bugs and assign a score out of 50 points (part of a 135-point total scoring system).\n\nCommon bugs to look for:\n- Division by zero errors\n- KeyError from missing dictionary keys\n- Wrong sorting direction\n- Incorrect denominator usage\n- Logic errors\n\nProvide a score (0-50) based on how well the code handles these potential bugs."
+    },
+    
+    "edge_case_checker": {
+      "model": "llama-3.3-70b",
+      "layer_model": "llama-4-scout-17b-16e-instruct",
+      "max_score": 35,
+      "prompt": "Analyze the provided Python code for edge case handling and assign a score out of 35 points (part of a 135-point total scoring system).\n\nEdge cases to consider:\n- Empty input lists\n- Missing dictionary keys\n- Zero or negative values\n- Invalid date ranges\n- No active users scenario\n\nProvide a score (0-35) based on how well the code handles edge cases."
+    },
+    
+    "performance_agent": {
+      "model": "llama-3.3-70b",
+      "layer_model": "llama-4-scout-17b-16e-instruct",
+      "max_score": 25,
+      "prompt": "Analyze the provided Python code for performance and assign a score out of 25 points (part of a 135-point total scoring system).\n\nPerformance factors:\n- Efficient sorting algorithms\n- Minimal loops and operations\n- Good algorithm complexity\n- Unnecessary operations\n\nProvide a score (0-25) based on the code's performance characteristics."
+    },
+    
+    "security_agent": {
+      "model": "llama-3.3-70b",
+      "layer_model": "llama-4-scout-17b-16e-instruct",
+      "max_score": 25,
+      "prompt": "Analyze the provided Python code for security and assign a score out of 25 points (part of a 135-point total scoring system).\n\nSecurity considerations:\n- Input validation\n- Safe data handling\n- Protection against injection\n- Proper error handling\n\nProvide a score (0-25) based on the code's security practices."
+    }
+  },
+
+  "structured_output_schema": {
+    "type": "json_schema",
+    "json_schema": {
+      "name": "agent_analysis",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "integer",
+            "description": "The numerical score for this analysis category"
+          },
+          "feedback": {
+            "type": "string", 
+            "description": "Brief feedback about the analysis"
+          },
+          "issues_found": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of specific issues found"
+          }
+        },
+        "required": ["score", "feedback", "issues_found"],
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "test_problem": {
+    "title": "User Engagement Metrics Calculator",
+    "description": "Fix the deliberately buggy function that calculates user engagement metrics",
+    "difficulty": "Intermediate",
+    "time_limit_minutes": 30,
+    
+    "original_buggy_code": "def calculate_user_metrics(users, start_date, end_date):\n    \"\"\"Calculate engagement metrics for active users\"\"\"\n    total_score = 0\n    active_users = []\n    \n    for user in users:\n        if user['last_login'] >= start_date and user['last_login'] <= end_date:\n            # Calculate engagement score\n            score = user['posts'] * 2 + user['comments'] * 1.5 + user['likes'] * 0.1\n            user['engagement_score'] = score / user['days_active']\n            total_score += score\n            active_users.append(user)\n    \n    # Calculate averages\n    avg_score = total_score / len(users)\n    top_users = sorted(active_users, key=lambda x: x['engagement_score'])[-5:]\n    \n    return {\n        'average_engagement': avg_score,\n        'top_performers': top_users,\n        'active_count': len(active_users)\n    }",
+    
+    "bugs_present": [
+      {
+        "type": "division_by_zero", 
+        "location": "user['engagement_score'] = score / user['days_active']",
+        "description": "Division by zero when days_active is 0"
+      },
+      {
+        "type": "keyerror",
+        "location": "user['last_login'], user['posts'], etc.",
+        "description": "KeyError when required keys are missing from user dictionary"
+      },
+      {
+        "type": "wrong_denominator",
+        "location": "avg_score = total_score / len(users)",
+        "description": "Should divide by len(active_users), not len(users)"
+      },
+      {
+        "type": "sorting_direction",
+        "location": "sorted(active_users, key=lambda x: x['engagement_score'])[-5:]",
+        "description": "Should use reverse=True for descending order instead of [-5:]"
+      }
+    ],
+    
+    "expected_fixes": [
+      "Add validation for user['days_active'] > 0 before division",
+      "Check if required keys exist in user dictionary before access",
+      "Use len(active_users) as denominator for average calculation", 
+      "Sort in descending order with reverse=True and take first 5 results",
+      "Handle empty active_users list edge case"
+    ]
+  },
+
+  "test_cases": [
+    {
+      "name": "Normal case",
+      "description": "Standard input with valid users",
+      "input": {
+        "users": [
+          {"last_login": "2024-01-15", "posts": 10, "comments": 5, "likes": 100, "days_active": 30},
+          {"last_login": "2024-01-10", "posts": 5, "comments": 8, "likes": 50, "days_active": 20}
+        ],
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-31"
+      },
+      "expected_behavior": "Should process both users and return correct metrics"
+    },
+    {
+      "name": "Empty users list",
+      "description": "Edge case with empty input",
+      "input": {
+        "users": [],
+        "start_date": "2024-01-01", 
+        "end_date": "2024-01-31"
+      },
+      "expected_behavior": "Should return zero metrics without errors"
+    },
+    {
+      "name": "Zero days active",
+      "description": "Bug test case with division by zero",
+      "input": {
+        "users": [
+          {"last_login": "2024-01-15", "posts": 10, "comments": 5, "likes": 100, "days_active": 0}
+        ],
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-31"
+      },
+      "expected_behavior": "Should handle division by zero gracefully"
+    },
+    {
+      "name": "Missing keys",
+      "description": "Bug test case with missing dictionary keys",
+      "input": {
+        "users": [
+          {"last_login": "2024-01-15", "posts": 10}
+        ],
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-31"
+      },
+      "expected_behavior": "Should handle missing keys without KeyError"
+    }
+  ]
+} 

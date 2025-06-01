@@ -75,7 +75,7 @@ Additional points for quick, correct submissions:
 - **2nd Place**: +10 points
 - **3rd Place**: +5 points
 
-**Maximum Total Score**: 170 points
+**Maximum Total Score**: 135 points
 
 ## 🔧 System Architecture
 

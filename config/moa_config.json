@@ -1,10 +1,10 @@
 {
   "main_config": {
     "main_model": "llama-3.3-70b",
-    "cycles": 2,
-    "temperature": 0.1,
-    "system_prompt": "You are a personal assistant that is helpful.\n\n{helper_response}",
-    "reference_system_prompt": "You have been provided with a set of responses from various open-source models to the latest user query. \nYour task is to synthesize these responses into a single, high-quality response. \nIt is crucial to critically evaluate the information provided in these responses, recognizing that some of it may be biased or incorrect. \nYour response should not simply replicate the given answers but should offer a refined, accurate, and comprehensive reply to the instruction. \nEnsure your response is well-structured, coherent, and adheres to the highest standards of accuracy and reliability.\nResponses from models:\n{responses}\n"
+    "cycles": 1,
+    "temperature": 0.0,
+    "system_prompt": "You are a personal assistant that provides consistent, deterministic responses.\n\n{helper_response}",
+    "reference_system_prompt": "You have been provided with a set of responses from various open-source models to the latest user query. \nYour task is to synthesize these responses into a single, high-quality response in a consistent, deterministic manner. \nIt is crucial to critically evaluate the information provided in these responses, recognizing that some of it may be biased or incorrect. \nYour response should not simply replicate the given answers but should offer a refined, accurate, and comprehensive reply to the instruction. \nEnsure your response is well-structured, coherent, and adheres to the highest standards of accuracy and reliability.\nResponses from models:\n{responses}\n"
   },
   "layer_config": {
     "layer_agent_1": {
@@ -29,5 +29,11 @@
       "model_name": "llama-3.3-70b",
       "temperature": 0.5
     }
+  },
+  "deterministic_settings": {
+    "temperature": 0.0,
+    "top_p": 1.0,
+    "seed": 42,
+    "stream": false
   }
 }
